@@ -1,0 +1,88 @@
+{
+    "quiz": [
+        {
+            "question": "Which is NOT a primitive data type in Rust?",
+            "answers": [
+                {
+                    "answer": "i32",
+                    "is_correct": false
+                },
+                {
+                    "answer": "f64",
+                    "is_correct": false
+                },
+                {
+                    "answer": "char",
+                    "is_correct": false
+                },
+                {
+                    "answer": "String",
+                    "is_correct": true
+                }
+            ]
+        },
+        {
+            "question": "What keyword declares a new variable in Rust?",
+            "answers": [
+                {
+                    "answer": "var",
+                    "is_correct": false
+                },
+                {
+                    "answer": "let",
+                    "is_correct": true
+                },
+                {
+                    "answer": "const",
+                    "is_correct": false
+                },
+                {
+                    "answer": "def",
+                    "is_correct": false
+                }
+            ]
+        },
+        {
+            "question": "What is the primary goal of Rust programming?",
+            "answers": [
+                {
+                    "answer": "High performance",
+                    "is_correct": false
+                },
+                {
+                    "answer": "Rapid development",
+                    "is_correct": false
+                },
+                {
+                    "answer": "Memory safety",
+                    "is_correct": true
+                },
+                {
+                    "answer": "Compatibility with C",
+                    "is_correct": false
+                }
+            ]
+        },
+        {
+            "question": "What does Rust's ownership system aim to prevent?",
+            "answers": [
+                {
+                    "answer": "Buffer overflows",
+                    "is_correct": false
+                },
+                {
+                    "answer": "Memory leaks",
+                    "is_correct": false
+                },
+                {
+                    "answer": "Data races",
+                    "is_correct": false
+                },
+                {
+                    "answer": "All of the above",
+                    "is_correct": true
+                }
+            ]
+        }        
+    ]
+}

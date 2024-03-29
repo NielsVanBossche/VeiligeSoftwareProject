@@ -1,0 +1,1 @@
+C:\Users\niels\Desktop\Github\VeiligeSoftwareProject\Rust\full_exercises\4_iterators\target\debug\iterators.exe: C:\Users\niels\Desktop\Github\VeiligeSoftwareProject\Rust\full_exercises\4_iterators\src\main.rs
