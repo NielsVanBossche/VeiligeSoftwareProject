@@ -1,3 +1,5 @@
+use std::ops::Index;
+use std::ops::Range;
 //In this exercise, you will implement the LocalStorageVec data structure, which
 //is a growable, generic list that resides either on the stack (if its size is below a
 //given number `N`), or on the heap if it grows larger
@@ -15,8 +17,11 @@
 // - `len` is a field of type `usize` (len represents the number of elements currently in the array, while the const-generic `N` represents its capacity)
 //Define a variant called `Heap`, containing a single unnamed field of type `Vec<T>`, which is a heap-based growable, contiguous list of type `T`
 //(you can find more info about when each variant is used in TODO 2)
-pub enum LocalStorageVec<T, const N: usize> {
 
+
+pub enum LocalStorageVec<T, const N: usize> {
+    Stack { buf: [T; N], len: usize },
+    Heap(Vec<T>),
 }
 
 //The `std::convert::From` and `std::convert::Into` traits allow a type to be easily created FROM
@@ -33,48 +38,85 @@ pub enum LocalStorageVec<T, const N: usize> {
 // - if N > M: the buffer is allocated on the heap and contains all elements of the given array
 //             nothing is allocated on the stack (the LocalStorageVec enum has the `Heap` variant)
 impl<T, const N: usize, const M: usize> From<[T; N]> for LocalStorageVec<T, M>
-where T: Default {
-  fn from(array: [T; N]) -> Self {
+where
+    T: Default + Clone + std::marker::Copy,
+{
+    fn from(array: [T; N]) -> Self {
         if N <= M {
-           
+            let mut buf = [T::default(); M];
+            buf[..N].copy_from_slice(&array);
+            LocalStorageVec::Stack { buf, len: N }
         } else {
-          //hint: `Vec<T>` implements the `From<[T,N]>` trait, see the docs
-          
+            LocalStorageVec::Heap(array.to_vec())
         }
     }
 }
 
-//TODO 3: complete these functions
-//To make implementation easier, you should bound `T` to implement `Copy` and `Default`
-impl<T, const N: usize> LocalStorageVec<T, N> {
 
-    //returns an empty LocalStorageVec without heap allocation
+impl<T: Copy + Default, const N: usize> LocalStorageVec<T, N> {
     pub fn new() -> LocalStorageVec<T, N> {
-
+        let buf = [T::default(); N];
+        LocalStorageVec::Stack{buf, len: 0} // Initialize len to 0
     }
 
-    //return the current number of elements
-    pub fn len(???) -> usize {
-
+    pub fn len(&self) -> usize {
+        match self {
+            LocalStorageVec::Stack{ len, .. } => *len,
+            LocalStorageVec::Heap(vec) => vec.len()
+        }
     }
 
-    //insert a new element at the back
-    //if the size exceeds the stack allocated buffer size, the whole buffer is moved to the heap
-    pub fn push(???) {
-        
+    pub fn push(&mut self, element: T) {
+        match self {
+            LocalStorageVec::Stack { buf, len } => {
+                if *len < N {
+                    buf[*len] = element;
+                    *len += 1;
+                } else {
+                    let mut vec = Vec::with_capacity(N);
+                    vec.extend_from_slice(&buf[..N]);
+                    vec.push(element);
+                    *self = LocalStorageVec::Heap(vec);
+                }
+            }
+            LocalStorageVec::Heap(vec) => vec.push(element),
+        }
     }
 
-    //pop and return the last element
-    //if the size gets equal to the stack allocated buffer size, the buffer gets moved back to the stack
-    //(whether or not this is efficient behaviour is not relevant for today)
-    //info: `Option` is used when there could be no result, where you would usually use some `null` value in many other impertive languages (see https://doc.rust-lang.org/std/option/index.html)
-    pub fn pop(???) -> Option<T> {
-        
+    pub fn pop(&mut self) -> Option<T> {
+        match self {
+            LocalStorageVec::Stack { buf, len } => {
+                if *len > 0 {
+                    *len -= 1;
+                    Some(buf[*len])
+                } else {
+                    None
+                }
+            }
+            LocalStorageVec::Heap(vec) => vec.pop(),
+        }
     }
 }
 
+
 //TODO 4 implement the `std::ops::Index` trait to read an item at a given index in the buffer
 //for example: let item: &T = my_local_storage_vec[42];
+impl<T, const N: usize> Index<usize> for LocalStorageVec<T, N> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match self {
+            LocalStorageVec::Stack { buf, len } => {
+                if index < *len {
+                    &buf[index]
+                } else {
+                    panic!("Index out of bounds")
+                }
+            }
+            LocalStorageVec::Heap(vec) => &vec[index],
+        }
+    }
+}
 
 
 //Notice how the `Index` trait is generic over the type used for indexing
@@ -82,6 +124,23 @@ impl<T, const N: usize> LocalStorageVec<T, N> {
 //However, if the index type parameter is a `Range<usize>` type, you can create slices (= type &[T]) from your buffer
 //for example: let items_slice: &[T] = my_local_storage_buffer[42..68];
 //TODO 5 implement this
+
+impl<T, const N: usize> Index<Range<usize>> for LocalStorageVec<T, N> {
+    type Output = [T];
+
+    fn index(&self, range: Range<usize>) -> &Self::Output {
+        match self {
+            LocalStorageVec::Stack { buf, len } => {
+                if range.end <= *len {
+                    &buf[range]
+                } else {
+                    panic!("Index out of bounds")
+                }
+            }
+            LocalStorageVec::Heap(vec) => &vec[range],
+        }
+    }
+}
 
 
 

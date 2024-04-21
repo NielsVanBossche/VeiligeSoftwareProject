@@ -4,7 +4,7 @@ fn main() {
     let x = Box::new(5);
     
     //TODO define variable y as a Box to an integer
-
+    let y = Box::new(0);
     
     //info: the `*` operator dereferences the Box to access the value it holds
     *y = 4;

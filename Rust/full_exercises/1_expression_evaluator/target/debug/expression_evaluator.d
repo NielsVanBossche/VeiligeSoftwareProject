@@ -1,0 +1,1 @@
+C:\Users\niels\Desktop\Github\VeiligeSoftwareProject\Rust\full_exercises\1_expression_evaluator\target\debug\expression_evaluator.exe: C:\Users\niels\Desktop\Github\VeiligeSoftwareProject\Rust\full_exercises\1_expression_evaluator\src\main.rs
