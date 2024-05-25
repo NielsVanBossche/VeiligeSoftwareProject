@@ -1589,6 +1589,7 @@ Disassembly of section .text:
     352d:	c6 04 01 6c          	mov    BYTE PTR [rcx+rax*1],0x6c
     3531:	4c 89 ef             	mov    rdi,r13
     3534:	e8 77 f9 ff ff       	call   2eb0 <authenticate>
+
     3539:	84 c0                	test   al,al
     353b:	4c 8b 45 c8          	mov    r8,QWORD PTR [rbp-0x38]
     353f:	48 8b 4d d0          	mov    rcx,QWORD PTR [rbp-0x30]
