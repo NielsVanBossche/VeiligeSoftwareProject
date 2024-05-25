@@ -1,8 +1,20 @@
+'''
+[FINDINGS]
+Use the same approach as in scenario_1 to exploit the server. 
+Because DES we can't run the shellcode directly, we need to use a ROP chain to replace this shellcode.
+The ROP chain will execute the 'execve' system call to run the keylog binary.
+This ROP chain starts at the return address of log_message and goes up the stack.
+
+A problem was the increment of rax to 59, which resulted in to many bytes in the buffer.
+To fix this we just put 59 on the stack and load it into rax using a pop before the syscall.
+Another problem was that the ./keylogger name was larger than rsi (64 bits), so we named it keylog.
+'''
+
 from keystone import *
 from pwn import *
 from struct import pack
 
-### CONFIGS ###µ
+### CONFIGS ###
 host = "192.168.152.130"
 port = 8080
 original_rbp = 0x7ffff7ace920 

