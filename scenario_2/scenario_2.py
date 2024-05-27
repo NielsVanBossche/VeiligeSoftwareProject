@@ -15,9 +15,9 @@ from pwn import *
 from struct import pack
 
 ### CONFIGS ###
-host = "192.168.152.130"
-port = 8080
-original_rbp = 0x7ffff7ace920 
+host = "192.168.1.4"
+port = 8086
+original_rbp = 0x7ffff7ad1920 
 log_buffer_rbp_offset = 0x450 
 log_buffer_prefix = 49 
 

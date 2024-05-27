@@ -5,7 +5,7 @@ The handle and next handle_client functions are called after the POST request is
 The handle_client function makes a buffer and later puts the POST-PAYLOAD in that buffer
 Later the handle_client function calls the parse_request function which reads the buffer and writes it to the data.txt file 
 Because we only wrote a small amount of data to the buffer, the rest of the buffer is filled null bytes and doesn't get overwritten,
-but we also passed in the POST request a very large Content-Length, which causes the parse_request function to read the buffer fully and more.
+but we also passed in the POST request a very large Content-Length, which causes the parse_request > build_200_response_append function to read the buffer fully and more.
 Thus causing it to write the buffer but also all the data on the stack above the buffer to the data.txt file
 This data contains the stack of the handle_client function and handle and all the data that was pushed on the stack
 Now we can find the RET address back to the handle function, but in this case we used RAX since that points to the first instruction of handle.
@@ -39,8 +39,8 @@ from pwn import *
 from struct import pack
 
 ### CONFIGS ###
-host = "192.168.152.130"
-port = 8080 
+host = "192.168.1.4"
+port = 8086
 og_handle_address = 0x3720
 return_address_offset = 183
 log_buffer_rbp_offset = 0x450 # the log buffer starts at $original_rbp-0x450

